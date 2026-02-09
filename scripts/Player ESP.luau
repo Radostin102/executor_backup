@@ -1,7 +1,7 @@
 local espConfig = {
 	espToggleKeybind = Enum.KeyCode.F1,
 	color = Color3.fromRGB(255, 255, 255),
-	boxThickness = 2,
+	thickness = 2,
 	boxOpacity = 1,
 	strokeOpacity = 0.5,
 	teamCheck = false,
@@ -9,7 +9,8 @@ local espConfig = {
 	textMargin = 0,
 	textSize = 14,
 	tracers = true,
-	tracerOpacity = 0.5
+	tracerOpacity = 0.5,
+	tracerStrokeOpacity = 0.25
 }
 
 local BOX_SIZE = Vector2.new(3000, 3800)
@@ -61,6 +62,7 @@ end
 
 local function hideTracer(data)
 	if data.tracer.Visible then data.tracer.Visible = false end
+	if data.tracerStroke.Visible then data.tracerStroke.Visible = false end
 end
 
 local function hideAll(data)
@@ -88,18 +90,18 @@ local function getPlayerNameText(player)
 end
 
 local function createVisuals(player)
-	local stroke = Drawing.new("Square")
-	stroke.Visible = false
-	stroke.Color = Color3.new(0, 0, 0)
-	stroke.Thickness = espConfig.boxThickness + 2
-	stroke.Filled = false
-	stroke.Transparency = espConfig.strokeOpacity
-	stroke.ZIndex = 1
+	local boxStroke = Drawing.new("Square")
+	boxStroke.Visible = false
+	boxStroke.Color = Color3.new(0, 0, 0)
+	boxStroke.Thickness = espConfig.thickness + 2
+	boxStroke.Filled = false
+	boxStroke.Transparency = espConfig.strokeOpacity
+	boxStroke.ZIndex = 1
 
 	local box = Drawing.new("Square")
 	box.Visible = false
 	box.Color = espConfig.color
-	box.Thickness = espConfig.boxThickness
+	box.Thickness = espConfig.thickness
 	box.Filled = false
 	box.Transparency = espConfig.boxOpacity
 	box.ZIndex = 2
@@ -117,11 +119,18 @@ local function createVisuals(player)
 	local tracer = Drawing.new("Line")
 	tracer.Visible = false
 	tracer.Color = espConfig.color
-	tracer.Thickness = espConfig.boxThickness
+	tracer.Thickness = espConfig.thickness
 	tracer.Transparency = espConfig.tracerOpacity
 	tracer.ZIndex = 3
 
-	return box, stroke, text, tracer
+	local tracerStroke = Drawing.new("Line")
+	tracerStroke.Visible = false
+	tracerStroke.Color = Color3.new(0, 0, 0)
+	tracerStroke.Thickness = espConfig.thickness + 2
+	tracerStroke.Transparency = espConfig.tracerStrokeOpacity
+	tracerStroke.ZIndex = 1
+
+	return box, boxStroke, text, tracer, tracerStroke
 end
 
 local function cleanupPlayer(player)
@@ -132,6 +141,7 @@ local function cleanupPlayer(player)
 	data.boxStroke:Remove()
 	data.nameText:Remove()
 	data.tracer:Remove()
+	data.tracerStroke:Remove()
 
 	for _, conn in data.connections do
 		conn:Disconnect()
@@ -175,14 +185,15 @@ local function setupPlayer(player)
 
 	cleanupPlayer(player)
 
-	local box, stroke, text, tracer = createVisuals(player)
+	local box, boxStroke, text, tracer, tracerStroke = createVisuals(player)
 
 	local data = {
 		player = player,
 		box = box,
-		boxStroke = stroke,
+		boxStroke = boxStroke,
 		nameText = text,
 		tracer = tracer,
+		tracerStroke = tracerStroke,
 		rootPart = nil,
 		humanoid = nil,
 		connections = {},
@@ -239,11 +250,12 @@ runService.RenderStepped:Connect(function()
 		local rootPart = data.rootPart
 		local humanoid = data.humanoid
 		local box = data.box
-		local stroke = data.boxStroke
+		local boxStroke = data.boxStroke
 		local text = data.nameText
 		local tracer = data.tracer
+		local tracerStroke = data.tracerStroke
 
-		if not (rootPart or rootPart.Parent or humanoid) or humanoid.Health <= 0 then
+		if not rootPart or not rootPart.Parent or not humanoid or humanoid.Health <= 0 then
 			hideAll(data)
 			continue
 		end
@@ -279,19 +291,19 @@ runService.RenderStepped:Connect(function()
 			box.Position = Vector2.new(posX, posY)
 			box.Color = playerColor
 
-			stroke.Size = Vector2.new(sizeX - 2, sizeY - 2)
-			stroke.Position = Vector2.new(posX + 1, posY + 1)
-			stroke.Thickness = espConfig.boxThickness + 2
+			boxStroke.Size = Vector2.new(sizeX - 2, sizeY - 2)
+			boxStroke.Position = Vector2.new(posX + 1, posY + 1)
+			boxStroke.Thickness = espConfig.thickness + 2
 
 			text.Position = Vector2.new(
 				posX + (sizeX / 2),
-				posY - espConfig.textMargin - text.TextBounds.Y - espConfig.boxThickness - 1
+				posY - espConfig.textMargin - text.TextBounds.Y - espConfig.thickness - 1
 			)
 			text.Color = playerColor
 
 			if not box.Visible then
 				box.Visible = true
-				stroke.Visible = true
+				boxStroke.Visible = true
 				text.Visible = true
 			end
 		else
@@ -299,27 +311,21 @@ runService.RenderStepped:Connect(function()
 		end
 
 		if tracersEnabled then
-			local tracerFrom: Vector2
+			local tracerFrom = Vector2.new(viewportX / 2, viewportY)
+			local tracerTo = Vector2.new(posX + (sizeX / 2), posY + sizeY)
 
-			if depth > 0 and sizeX then
-				tracerFrom = Vector2.new(posX + sizeX / 2, posY + sizeY)
+			if tracerFrom.Y < tracerTo.Y then
+				hideTracer(data)
 			else
-				local cx, cy = viewportX / 2, viewportY / 2
-				local dx, dy = (viewportX - screenPos.X) - cx, (viewportY - screenPos.Y) - cy
-				local len = math.sqrt(dx*dx + dy*dy)
-				if len > 1 then
-					dx, dy = dx / len, dy / len
-				end
-				tracerFrom = Vector2.new(cx + dx*5000, cy + dy*5000)
+				tracer.From = tracerFrom
+				tracer.To = tracerTo
+				tracer.Color = playerColor
+				tracer.Visible = true
+
+				tracerStroke.From = tracerFrom
+				tracerStroke.To = tracerTo
+				tracerStroke.Visible = true
 			end
-
-			local tracerTo = Vector2.new(viewportX / 2, viewportY - 100)
-
-			tracer.From = tracerFrom
-			tracer.To = tracerTo
-			tracer.Color = playerColor
-
-			if not tracer.Visible then tracer.Visible = true end
 		else
 			hideTracer(data)
 		end
